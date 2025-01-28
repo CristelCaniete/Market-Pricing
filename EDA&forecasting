@@ -1,0 +1,116 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+# Data loading
+df = pd.read_csv('Market Pricing.csv')
+
+# Data exploration
+print(f"Data head: \n{df.head()}")
+print(f"Data shape: \n{df.shape}") # There are 7 columns and each column has 14880 entries
+print(f"Data info: \n{df.info()}") # Each column has complete/same number of entries
+print(f"Data describe: \n{df.describe()}")
+print(f"Data is null: \n{df.isnull().sum()}") # Used to check null values
+
+# Plotting the time series
+# Visual/Result shows that Minimum, Maximum and Average are not stationary
+df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+plt.figure(figsize=(10, 6))
+plt.plot(df["Timestamp"], df["Minimum"], label="Minimum", marker='o', color='red')
+plt.plot(df["Timestamp"], df["Maximum"], label="Maximum", marker='o', color='green')
+plt.plot(df["Timestamp"], df["Average"], label="Average", marker='o', color='blue')
+plt.legend()
+plt.xlabel('Timestamp')
+plt.ylabel('Value')
+plt.show()
+
+#Minimum Visualization
+df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+plt.figure(figsize=(10, 6))
+plt.plot(df["Timestamp"], df["Minimum"], label="Minimum", marker='o', color='red')
+plt.legend('Minimum')
+
+#Maximum Visualization
+df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+plt.figure(figsize=(10, 6))
+plt.plot(df["Timestamp"], df["Maximum"], label="Maximum", marker='o', color='green')
+plt.legend('Maximum')
+
+#Average Visualization
+df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+plt.figure(figsize=(10, 6))
+plt.plot(df["Timestamp"], df["Average"], label="Average", marker='o', color='blue')
+plt.legend('Average')
+
+# Converting 'Timestamp' to datetime format
+df['Datetime'] = pd.to_datetime(df['Timestamp'])
+df.set_index('Datetime', inplace=True)
+
+# Defining test and train data ranges
+test_start_date = '2024-11-01 00:00:00'
+test_end_date = '2024-11-06 23:59:59'
+
+test_data = df[(df.index >= test_start_date) & (df.index <= test_end_date)] #Month of November as test data
+train_data = df[(df.index < test_start_date)] #Rest of the months before November (Train data)
+
+#Change to Maximum if wants to get the predicted value for maximum
+train_series = train_data['Minimum']
+test_series = test_data['Minimum']
+
+# Display the market pricing train and test data
+plt.figure(figsize=(12, 8))
+plt.plot(train_series.index, train_series, label='Train Data', color='green')  # Plot training data (Feb-Oct)
+plt.plot(test_series.index, test_series, label='Test Data', color='red')  # Plot test data (Nov)
+plt.legend()
+plt.xlabel('Time')
+plt.ylabel('Value')
+plt.show()
+
+# Fit SARIMA model
+#truncate data to 5000 since using it all cause my kernel to die
+train_subset = train_series[-5000:]  # For getting the 6 months prediction
+
+# Still studying this part of sarimax
+# Using more complex sarimax order makes my kernel die
+# Tried experimenting with other order
+# What works for me is 1,1,1 and 0,1,0 with 5000 dataset (But i get higher mae and rmse with 0,1,0)
+model = SARIMAX(train_subset, order=(1, 1, 1), seasonal_order=(1, 1, 1, 24))
+results = model.fit()
+
+# Forecast for the next 6 months (4320 steps for hourly predictions)
+forecast_6_months = results.get_forecast(steps=4320)  # 4320 steps for 6 months
+forecast_6_months_index = pd.date_range(start="2024-11-01 00:00:00", periods=4320, freq='h')
+forecast_6_months_values = forecast_6_months.predicted_mean
+
+#Visualize the results (For 6-month forecast)
+plt.figure(figsize=(12, 8))
+plt.plot(train_series.index, train_series, label='Observed')
+plt.plot(forecast_6_months_index, forecast_6_months_values, label='6-Month Forecast', color='green')
+plt.xlabel('Timestamp')
+plt.ylabel('Value')
+plt.title('Time Series Forecast for the Next 6 Months')
+plt.legend()
+plt.show()
+
+# Print forecast for the next 6 months
+print(f"6-Month Forecast Values: \n{forecast_6_months_values}")
+
+# Evaluation Metrics (on the November data)
+mae = mean_absolute_error(test_series, forecast_6_months_values[:len(test_series)])
+rmse = np.sqrt(mean_squared_error(test_series, forecast_6_months_values[:len(test_series)]))
+
+print(f"MAE: {mae}")
+print(f"RMSE: {rmse}")
+
+# Actual vs Predicted values for November
+# # Remove the comments if you want to check the difference between actual and predicted values for november 1-6
+plt.figure(figsize=(12, 8))
+plt.plot(forecast_6_months_index[:len(test_series)], test_series, label='Actual', color='red')
+plt.plot(forecast_6_months_index[:len(test_series)], forecast_6_months_values[:len(test_series)], label='Predicted', color='red', linestyle='--')
+plt.xlabel('Timestamp')
+plt.ylabel('Value')
+plt.title('Actual vs Predicted Values for November')
+plt.legend()
+plt.show()
